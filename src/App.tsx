@@ -1,96 +1,74 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { MsalAuthenticationTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react';
+import { InteractionType } from '@azure/msal-browser';
+import { loginRequest } from './authConfig';
 
-// --- START: CONSOLE INTERCEPTION SCRIPT ---
-const targetOrigin = '*'; // <-- IMPORTANT: SET YOUR PARENT ORIGIN
-// const targetOrigin = '*'; // Use '*' ONLY for local development if origins differ
+import IndexPage from './pages/Index';
+import { Button } from '@/components/ui/button';
+import { Layers3 } from 'lucide-react';
 
-// Store original console methods
-const originalConsole = {
-    log: console.log.bind(console),
-    error: console.error.bind(console),
-    warn: console.warn.bind(console),
-    info: console.info.bind(console),
-};
-
-// Function to format arguments for postMessage
-function formatLogArguments(args) {
-    // (Keep the function as you defined it)
-    return args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-            try {
-                return JSON.parse(JSON.stringify(arg));
-            } catch (e) {
-                return '[Unserializable Object]';
-            }
-        }
-        return String(arg);
-    }).join(' ');
-}
-
-// Override console methods
-console.log = (...args) => {
-    originalConsole.log(...args);
-    try {
-        window.parent.postMessage({ type: 'console', level: 'log', message: formatLogArguments(args), timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting log message:", e); }
-};
-
-console.error = (...args) => {
-    originalConsole.error(...args);
-    try {
-        const message = formatLogArguments(args);
-        const stack = (args[0] instanceof Error) ? args[0].stack : new Error().stack;
-        window.parent.postMessage({ type: 'console', level: 'error', message: message, stack: stack, timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting error message:", e); }
-};
-
-console.warn = (...args) => {
-    originalConsole.warn(...args);
-    try {
-        window.parent.postMessage({ type: 'console', level: 'warn', message: formatLogArguments(args), timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting warn message:", e); }
-};
-
-console.info = (...args) => {
-    originalConsole.info(...args);
-    try {
-        window.parent.postMessage({ type: 'console', level: 'info', message: formatLogArguments(args), timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting info message:", e); }
-};
-
-// Catch unhandled errors and rejections
-window.addEventListener('error', (event) => {
-    originalConsole.error('Unhandled global error:', event.error || event.message);
-    try {
-        window.parent.postMessage({ type: 'console', level: 'error', message: `Unhandled global error: ${event.message}`, errorDetails: event.error ? formatLogArguments([event.error]) : null, stack: event.error ? event.error.stack : null, filename: event.filename, lineno: event.lineno, colno: event.colno, timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting global error message:", e); }
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-    originalConsole.error('Unhandled promise rejection:', event.reason);
-    try {
-        window.parent.postMessage({ type: 'console', level: 'error', message: `Unhandled promise rejection: ${formatLogArguments([event.reason])}`, reason: formatLogArguments([event.reason]), stack: event.reason instanceof Error ? event.reason.stack : null, timestamp: new Date().toISOString() }, targetOrigin);
-    } catch (e) { originalConsole.error("Error posting rejection message:", e); }
-});
-
-console.log('Console interceptor initialized.');
-// --- END: CONSOLE INTERCEPTION SCRIPT ---
-
-
-const App = () => (
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+/**
+ * Renders a loading screen while MSAL is performing authentication operations.
+ */
+const LoadingComponent = () => (
+    <div className="flex items-center justify-center h-screen bg-background">
+        <p className="text-foreground">Authentication in progress...</p>
+    </div>
 );
+
+/**
+ * Renders the sign-in page for unauthenticated users.
+ */
+const SignInPage = () => {
+    const { instance } = useMsal();
+
+    const handleLogin = () => {
+        instance.loginRedirect(loginRequest).catch(e => {
+            console.error(e);
+        });
+    }
+
+    return (
+        <div className="flex flex-col items-center justify-center h-screen bg-background text-foreground">
+             <div className="flex items-center gap-2 mb-8 p-2">
+                <div className="bg-foreground text-background p-2 rounded-lg">
+                    <Layers3 size={32} />
+                </div>
+                <span className="font-bold text-2xl">Dashboard</span>
+            </div>
+            <h1 className="text-3xl font-bold mb-4">Welcome</h1>
+            <p className="text-muted-foreground mb-8">Please sign in with your Microsoft account to continue.</p>
+            <Button onClick={handleLogin}>Sign In with Microsoft</Button>
+        </div>
+    );
+};
+
+/**
+ * The main application component.
+ * It handles the routing and conditionally renders content based on authentication status.
+ */
+const App: React.FC = () => {
+    return (
+        <Router>
+            {/* Show sign-in page if user is not authenticated */}
+            <UnauthenticatedTemplate>
+                <SignInPage />
+            </UnauthenticatedTemplate>
+
+            {/* Show main application content if user is authenticated */}
+            <MsalAuthenticationTemplate
+                interactionType={InteractionType.Redirect}
+                authenticationRequest={loginRequest}
+                loadingComponent={LoadingComponent}
+            >
+                <Routes>
+                    <Route path="/" element={<IndexPage />} />
+                    {/* Add other protected routes here */}
+                </Routes>
+            </MsalAuthenticationTemplate>
+        </Router>
+    );
+};
 
 export default App;
